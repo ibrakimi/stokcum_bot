@@ -1,0 +1,52 @@
+{
+    "PROTEUS PREMIX": {
+        "8006901000": {
+            "isim": "Emniyet Ventili",
+            "adet": 5
+        },
+        "8006901001": {
+            "isim": "Basınç Sensörü",
+            "adet": 6
+        },
+        "8006901002": {
+            "isim": "Akış Ölçer",
+            "adet": 5
+        },
+        "8006901003": {
+            "isim": "Termostatik Valf",
+            "adet": 5
+        }
+    },
+    "CALORA PREMIX": {
+        "8006901004": {
+            "isim": "Solenoid Bobin",
+            "adet": 5
+        },
+        "8006901005": {
+            "isim": "Türbin",
+            "adet": 6
+        },
+        "8006901006": {
+            "isim": "Debi Ayar Vanası",
+            "adet": 5
+        }
+    },
+    "CITIUS PREMIX": {
+        "8006901007": {
+            "isim": "Hava Filtresi",
+            "adet": 5
+        },
+        "8006901008": {
+            "isim": "Hız Kontrol Ünitesi",
+            "adet": 5
+        },
+        "8006901009": {
+            "isim": "Limit Anahtarı",
+            "adet": 5
+        },
+        "8006901010": {
+            "isim": "Röle Kartı",
+            "adet": 5
+        }
+    }
+}
