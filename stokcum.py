@@ -1,3 +1,7 @@
+import logging  # <-- BU SATIRI EKLEYİN
+import json
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os # Yeni: Ortam değişkenlerini okumak için
 # ... diğer import'lar
 
