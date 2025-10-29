@@ -3,17 +3,21 @@ import json
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters, ContextTypes,
-    ConversationHandler # YENİ: Konuşma Yönetimi İçin
+    ConversationHandler 
 )
 import os
 
 # ----------------------------------------------------------------------
-# 1. YAPILANDIRMA VE SABİT DEĞERLER
+# 1. YAPILANDIRMA VE SABİT DEĞERLER (Render Ortam Değişkenlerinden Okunur)
 # ----------------------------------------------------------------------
 
-TOKEN = "7241140480:AAFkzFSgwDw6amZHWkRorcfbxD4HuISyhVc" 
-IZINLI_KULLANICILAR_STR = os.environ.get("IZINLI_KULLANICILAR", "948469975") # Render'dan okumak için
+# Bot Token'ı ortam değişkeninden okunur
+TOKEN = os.environ.get("TELEGRAM_TOKEN", "7241140480:AAFkzFSgwDw6amZHWkRorcfbxD4HuISyhVc") 
+
+# Yetkili Kullanıcı ID'leri ortam değişkeninden okunur (Örn: "ID1,ID2")
+IZINLI_KULLANICILAR_STR = os.environ.get("IZINLI_KULLANICILAR", "948469975") 
 try:
+    # ID'ler boşluksuz virgülle ayrılmış olmalı
     IZINLI_KULLANICILAR = [int(id.strip()) for id in IZINLI_KULLANICILAR_STR.split(',') if id.strip()]
 except ValueError:
     IZINLI_KULLANICILAR = []
@@ -21,12 +25,12 @@ except ValueError:
 STOK_DOSYASI = "stok_kayit_kategorili.json" 
 VARSAYILAN_ADET = 5
 
-# Konuşma Durumları (States)
+# Konuşma Durumları (States) - 3 adıma çıkarıldı
 URUN_KODU_BEKLE = 1
 URUN_ISMI_BEKLE = 2
+URUN_ADI_BEKLE = 3 # Yeni adım: Ürün adı bekleniyor
 
-# KATEGORİ VE ÜRÜN TANIMLARI (Eklenen ürünler artık burada olmayacak, dinamikleşiyor)
-# Bu sadece ilk çalıştırmada boş veritabanını doldurmak içindir.
+# Varsayılan Ürün Kataloğu (Sadece ilk çalıştırma için)
 URUN_KATALOGU = {
     "PROTEUS PREMIX": {
         "8006901000": "Emniyet Ventili",
@@ -49,7 +53,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ----------------------------------------------------------------------
-# 2. VERİ YÖNETİMİ VE YÜKLEME
+# 2. VERİ YÖNETİMİ VE YÜKLEME (Aynı Kalır)
 # ----------------------------------------------------------------------
 
 def _varsayilan_stok_olustur():
@@ -83,21 +87,31 @@ stok_veritabani = yukle_stok()
 if not stok_veritabani:
     stok_veritabani = _varsayilan_stok_olustur()
     kaydet_stok(stok_veritabani)
+else:
+    # Veri bütünlüğü kontrolü (yeni kategoriler/ürünler eklenirse)
+    guncellendi = False
+    for kategori, urunler in URUN_KATALOGU.items():
+        if kategori not in stok_veritabani:
+            stok_veritabani[kategori] = {}
+            guncellendi = True
+        
+        for kod, isim in urunler.items():
+            if kod not in stok_veritabani[kategori]:
+                stok_veritabani[kategori][kod] = {'isim': isim, 'adet': VARSAYILAN_ADET}
+                guncellendi = True
+            elif stok_veritabani[kategori][kod]['isim'] != isim:
+                 stok_veritabani[kategori][kod]['isim'] = isim
+                 guncellendi = True
+    if guncellendi:
+        kaydet_stok(stok_veritabani)
 
 # ----------------------------------------------------------------------
-# 3. YARDIMCI VE YETKİLENDİRME FONKSİYONLARI
+# 3. YARDIMCI VE YETKİLENDİRME FONKSİYONLARI (Aynı Kalır)
 # ----------------------------------------------------------------------
 
 def yetki_kontrol(update: Update):
     user_id = update.effective_user.id
     return user_id in IZINLI_KULLANICILAR
-
-def _urun_bul(urun_kod):
-    """Tüm kategorilerde ürün kodunu arar ve ilk bulduğu kategori ve ürün bilgisini döndürür."""
-    for kategori, urunler in stok_veritabani.items():
-        if urun_kod in urunler:
-            return kategori, urunler[urun_kod]
-    return None, None
 
 def _tum_kategorilerde_urun_ara(urun_kod):
     """Verilen ürünü hangi kategorilerde bulduğunu listeler."""
@@ -108,11 +122,10 @@ def _tum_kategorilerde_urun_ara(urun_kod):
     return bulunan_kategoriler
 
 # ----------------------------------------------------------------------
-# 4. BOT KOMUT İŞLEYİCİLERİ (Temel Komutlar)
+# 4. BOT KOMUT İŞLEYİCİLERİ (Temel Komutlar - Aynı Kalır)
 # ----------------------------------------------------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # ... (Aynı kalır)
     if yetki_kontrol(update):
         kategori_listesi = '\n• ' + '\n• '.join(stok_veritabani.keys())
         await update.message.reply_text(
@@ -120,7 +133,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             '📋 **Temel Komutlar:**\n'
             '• Tüm stok: `/stok`\n'
             f'• Kategori Sorgulama (Örn: `PROTEUS PREMIX`):\n{kategori_listesi}\n'
-            '• **Yeni Ürün Ekleme:** `/ekle`\n' # Yeni komut
+            '• **Yeni Ürün Ekleme:** `/ekle`\n'
             '• Stok değiştir: `+8006901000` / `-8006901000`\n'
             '• Stok Sorgulama: `8006901000`',
             parse_mode='Markdown'
@@ -129,7 +142,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("⛔ Bu botu kullanmaya yetkiniz yok.")
 
 async def stok_goster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # ... (Aynı kalır)
     if not yetki_kontrol(update):
         return await update.message.reply_text("⛔ Yetkiniz yok.")
 
@@ -155,11 +167,11 @@ async def stok_goster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text(mesaj, parse_mode='Markdown')
 
 # ----------------------------------------------------------------------
-# 5. YENİ ÜRÜN EKLEME (CONVERSATION HANDLER)
+# 5. YENİ ÜRÜN EKLEME (CONVERSATION HANDLER) - DÜZELTİLDİ
 # ----------------------------------------------------------------------
 
 async def ekle_baslat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """/ekle komutu ile konuşmayı başlatır ve kategoriyi alır."""
+    """/ekle komutu ile konuşmayı başlatır ve kategoriyi ister."""
     if not yetki_kontrol(update):
         await update.message.reply_text("⛔ Bu işlemi yapmaya yetkiniz yok.")
         return ConversationHandler.END
@@ -173,7 +185,7 @@ async def ekle_baslat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         parse_mode='Markdown'
     )
     
-    # Bir sonraki durum: URUN_KODU_BEKLE (Aslında kategori ismini alıyoruz, ancak koddaki durumu böyle adlandırdık)
+    # Adım 1: Kategori adını bekliyoruz
     return URUN_KODU_BEKLE 
 
 async def urun_kodu_al(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -187,7 +199,6 @@ async def urun_kodu_al(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         kaydet_stok(stok_veritabani)
         await update.message.reply_text(f"✅ Yeni kategori **{kategori}** başarıyla oluşturuldu.")
         
-    # Kategori adını context.user_data'ya kaydet (konuşma boyunca taşınacak veri)
     context.user_data['kategori'] = kategori
     
     await update.message.reply_text(
@@ -195,7 +206,7 @@ async def urun_kodu_al(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         "Şimdi lütfen eklemek istediğiniz **ürün kodunu (sadece sayı)** yazınız.",
         parse_mode='Markdown'
     )
-    # Bir sonraki durum: URUN_ISMI_BEKLE
+    # Adım 2: Ürün kodunu bekliyoruz
     return URUN_ISMI_BEKLE
 
 async def urun_isim_al(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -206,7 +217,6 @@ async def urun_isim_al(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await update.message.reply_text("❌ Ürün kodu sadece sayılardan oluşmalıdır. Lütfen tekrar deneyin.")
         return URUN_ISMI_BEKLE # Aynı durumda kal
 
-    # Ürün kodunu context.user_data'ya kaydet
     context.user_data['urun_kod'] = urun_kod
 
     await update.message.reply_text(
@@ -214,8 +224,8 @@ async def urun_isim_al(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         "Şimdi lütfen eklemek istediğiniz **ürün adını** (Örn: Emniyet Ventili) yazınız."
     )
     
-    # Bir sonraki durum: ConversationHandler.END'e gitmeden önceki son adım
-    return ConversationHandler.END # Normalde bir sonraki durum olurdu, ama bitiriyoruz.
+    # Adım 3: Ürün adını bekliyoruz
+    return URUN_ADI_BEKLE # Yeni durum
 
 async def ekle_bitir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ürün adını alır, ürünü kaydeder ve konuşmayı sonlandırır."""
@@ -229,10 +239,7 @@ async def ekle_bitir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("Hata: Önceki adımlardan veri alınamadı. Lütfen `/ekle` komutu ile tekrar başlayınız.")
         return ConversationHandler.END
         
-    # --- Kritik Kısım: Ürünü Kategoriye Ekleme ---
-    
-    # Stok durumu (adet) sadece bu kategori için eklenir.
-    # Eğer başka kategoride aynı kod zaten varsa, bu sadece o kategoriye de eklenir.
+    # Ürünü kategoriye ekle
     stok_veritabani[kategori][urun_kod] = {
         'isim': urun_isim,
         'adet': VARSAYILAN_ADET # Başlangıç stoğu VARSAYILAN_ADET (5)
@@ -251,7 +258,6 @@ async def ekle_bitir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     
     if len(bulunanlar) > 1:
-        # Kullanıcıya bu kodun birden fazla yerde bulunduğunu bildirir
         cevap += (
             f"\n\n⚠️ **UYARI:** Bu ürün kodu ( `{urun_kod}` ) şu kategorilerde de listelenmektedir: "
             f"{', '.join(bulunanlar)}. Stok takibi her bir kategori için ayrı ayrı yapılacaktır."
@@ -259,20 +265,22 @@ async def ekle_bitir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
     await update.message.reply_text(cevap, parse_mode='Markdown')
 
-    # Konuşmayı bitir
+    context.user_data.clear() # Konuşma verilerini temizle
     return ConversationHandler.END
 
 async def ekle_iptal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """/iptal komutu ile konuşmayı sonlandırır."""
     await update.message.reply_text('İşlem iptal edildi.', )
+    context.user_data.clear()
     return ConversationHandler.END
 
 # ----------------------------------------------------------------------
-# 6. ESKİ İŞLEMLERİN YENİ DURUMA UYARLANMASI (Stok Değiştirme)
+# 6. ESKİ İŞLEMLERİN YENİ DURUMA UYARLANMASI (Aynı Kalır)
 # ----------------------------------------------------------------------
 
 async def islem_yap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Kategori, +, -, veya sadece ürün kodu mesajlarını işler."""
+    # Bu fonksiyon, 5. adımdaki eklemeler hariç, aynı kalır.
+
     if not yetki_kontrol(update):
         return
 
@@ -280,11 +288,10 @@ async def islem_yap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     global stok_veritabani
     
-    # Kategori Sorgulama Kontrolü (Aynı kalır)
+    # Kategori Sorgulama Kontrolü
     if text in stok_veritabani:
         kategori = text
         mesaj = f"📦 **{kategori}** Kategorisindeki Ürünler:\n\n"
-        # ... (Geri kalanı aynı kalır)
         urunler = stok_veritabani[kategori]
         
         if not urunler:
@@ -315,13 +322,11 @@ async def islem_yap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         return
 
-    # Ürünü tüm kategorilerde arayacağız ve bulunan tüm stokları güncelleyeceğiz!
     bulunan_kategoriler = _tum_kategorilerde_urun_ara(urun_kod)
 
     if not bulunan_kategoriler:
         return await update.message.reply_text(f"❌ **{urun_kod}** adında bir stok kodu bulunamadı.")
     
-    # --- Stok Sorgulama ---
     if islem == 'SORGU':
         sorgu_mesaj = f"🔍 **{urun_kod}** Kodu için Stok Durumları:\n"
         
@@ -333,14 +338,12 @@ async def islem_yap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             
         return await update.message.reply_text(sorgu_mesaj, parse_mode='Markdown')
 
-    # --- Stok Değiştirme (+/-) ---
-    
-    if islem == '+':
+    elif islem == '+':
         # Tüm kategorilerdeki stoğu 1 artır
         for kategori in bulunan_kategoriler:
              stok_veritabani[kategori][urun_kod]['adet'] += 1
         
-        yeni_adet = stok_veritabani[bulunan_kategoriler[0]][urun_kod]['adet'] # İlk kategoriden yeni adeti al
+        yeni_adet = stok_veritabani[bulunan_kategoriler[0]][urun_kod]['adet']
         kaydet_stok(stok_veritabani)
         
         await update.message.reply_text(
@@ -350,10 +353,9 @@ async def islem_yap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         
     elif islem == '-':
-        mevcut_adet = stok_veritabani[bulunan_kategoriler[0]][urun_kod]['adet'] # İlk kategoriden mevcut adeti al
+        mevcut_adet = stok_veritabani[bulunan_kategoriler[0]][urun_kod]['adet']
         
         if mevcut_adet > 0:
-            # Tüm kategorilerdeki stoğu 1 azalt
             for kategori in bulunan_kategoriler:
                 stok_veritabani[kategori][urun_kod]['adet'] -= 1
                 
@@ -379,24 +381,24 @@ def main() -> None:
     
     application = Application.builder().token(TOKEN).build()
 
-    # Yeni Konuşma İşleyicisi Tanımı
+    # YENİ ve DÜZELTİLMİŞ Konuşma İşleyicisi Tanımı
     ekle_handler = ConversationHandler(
         entry_points=[CommandHandler("ekle", ekle_baslat)],
         states={
-            URUN_KODU_BEKLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, urun_kodu_al)],
-            URUN_ISMI_BEKLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ekle_bitir)],
+            URUN_KODU_BEKLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, urun_kodu_al)], # Kategori alındı
+            URUN_ISMI_BEKLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, urun_isim_al)], # Ürün kodu alındı
+            URUN_ADI_BEKLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ekle_bitir)], # Ürün adı alındı ve işlem bitti
         },
         fallbacks=[CommandHandler("iptal", ekle_iptal)],
-        map_to_parent=[MessageHandler(filters.TEXT, islem_yap)] # Tüm kalan mesajları islem_yap'a yönlendir.
     )
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stok", stok_goster))
     
-    # Konuşma handler'ı ekle
+    # Conversation Handler'ı diğerlerinden önce ekle
     application.add_handler(ekle_handler)
     
-    # Mesaj işleyicisi (Önceki işleyicileri bu alttaki catch-all'dan ayırmamız gerekti)
+    # Tüm kalan mesajları işleyecek Handler
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, islem_yap)
     )
